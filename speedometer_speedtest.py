@@ -94,22 +94,63 @@ def run_speedtest():
         st.get_servers()
         st.get_best_server()
 
+        # --- DOWNLOAD WITH LIVE ANIMATION (worker thread) ---
         status_label.config(text="Testing download speed...")
         root.update()
 
-        # download test with live animation
-        dl_bps = st.download()
-        dl_mbps = dl_bps / 1_000_000
+        dl_result = {"bps": 0.0}
+        def dl_worker():
+            try:
+                bps = st.download()
+                dl_result["bps"] = bps
+            except Exception as e:
+                dl_result["error"] = e
+
+        t_dl = threading.Thread(target=dl_worker, daemon=True)
+        t_dl.start()
+
+        # while download thread is alive, animate a pulsing/sine simulated value
+        while t_dl.is_alive():
+            sim = (math.sin(time.time() * 3) * 0.5 + 0.5) * 0.8 * MAX_SPEED
+            draw_needle(sim)
+            speed_label.config(text=f"{sim:.2f} Mbps")
+            root.update()
+            time.sleep(0.04)
+
+        if "error" in dl_result:
+            raise dl_result["error"]
+
+        dl_mbps = dl_result["bps"] / 1_000_000
+        # animate smoothly to the final download value
         animate_speed(min(dl_mbps, MAX_SPEED))
 
+        # --- UPLOAD WITH LIVE ANIMATION (worker thread) ---
         status_label.config(text="Testing upload speed...")
         root.update()
 
-        time.sleep(0.5)
-        animate_speed(0)  # reset animation quick
+        ul_result = {"bps": 0.0}
+        def ul_worker():
+            try:
+                bps = st.upload()
+                ul_result["bps"] = bps
+            except Exception as e:
+                ul_result["error"] = e
 
-        ul_bps = st.upload()
-        ul_mbps = ul_bps / 1_000_000
+        t_ul = threading.Thread(target=ul_worker, daemon=True)
+        t_ul.start()
+
+        # smaller pulsing during upload
+        while t_ul.is_alive():
+            sim = (math.cos(time.time() * 3.5) * 0.5 + 0.5) * 0.6 * MAX_SPEED
+            draw_needle(sim)
+            speed_label.config(text=f"{sim:.2f} Mbps")
+            root.update()
+            time.sleep(0.04)
+
+        if "error" in ul_result:
+            raise ul_result["error"]
+
+        ul_mbps = ul_result["bps"] / 1_000_000
         animate_speed(min(ul_mbps, MAX_SPEED))
 
         ping = st.results.ping if hasattr(st.results, "ping") else 0
